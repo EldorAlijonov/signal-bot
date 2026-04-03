@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Telegram Signal Monitor Bot
 
 Bu loyiha 2 qismdan iborat:
@@ -83,3 +84,7 @@ Birinchi marta Telethon sizdan telefon raqam, login kodi, ehtimol 2-step passwor
   - `*.session`
   - `bot_data.db`
   - `__pycache__/`
+=======
+# signal-bot
+Signal bot
+>>>>>>> f168a07da6f525dcea17db103fc224eb0f94d482
