@@ -4,6 +4,7 @@ import html
 import logging
 
 from telethon import TelegramClient, events
+from telethon.errors import ChannelPrivateError, ChatWriteForbiddenError
 
 from .config import API_ID, API_HASH, SESSION_NAME, ALLOWED_CHATS, BLACKLIST, ADMIN_ID
 from .database import get_bot_enabled, get_keywords, stats_add
@@ -42,11 +43,9 @@ def build_user_text(sender, sender_id: int) -> tuple[str, str]:
 def build_message_link(chat, chat_id: int, message_id: int) -> str | None:
     chat_username = getattr(chat, "username", None)
 
-    # Public group/channel
     if chat_username:
         return f"https://t.me/{chat_username}/{message_id}"
 
-    # Private supergroup
     if str(chat_id).startswith("-100"):
         internal_id = str(chat_id)[4:]
         return f"https://t.me/c/{internal_id}/{message_id}"
@@ -57,6 +56,7 @@ def build_message_link(chat, chat_id: int, message_id: int) -> str | None:
 @user_client.on(events.NewMessage)
 async def handle_new_message(event):
     try:
+        # Bot o‘chiq bo‘lsa ishlamaydi
         if not get_bot_enabled():
             return
 
@@ -66,6 +66,7 @@ async def handle_new_message(event):
         if event.chat_id in BLACKLIST:
             return
 
+        # duplicate oldini olish
         message_key = (event.chat_id, event.message.id)
         if message_key in recent_messages:
             return
@@ -78,9 +79,23 @@ async def handle_new_message(event):
         if not text_raw:
             return
 
+        # faqat allowed chatlar
         if ALLOWED_CHATS and event.chat_id not in ALLOWED_CHATS:
             return
 
+        # 🔥 ENG MUHIM: chatni oldin olish
+        chat = await event.get_chat()
+        if not chat:
+            return
+
+        # 🔥 chiqib ketilgan yoki o‘chirilgan chatlar
+        if getattr(chat, "left", False):
+            return
+
+        if getattr(chat, "deactivated", False):
+            return
+
+        # keyword qidirish
         matched_keyword = None
         text_lower = normalize_text(text_raw)
 
@@ -93,7 +108,6 @@ async def handle_new_message(event):
             return
 
         sender = await event.get_sender()
-        chat = await event.get_chat()
 
         sender_id = getattr(sender, "id", event.sender_id)
         user_text, profile_link = build_user_text(sender, sender_id)
@@ -155,15 +169,9 @@ async def handle_new_message(event):
 
         logger.info("Xabar yuborildi | chat=%s | keyword=%s", event.chat_id, matched_keyword)
 
+    except (ChannelPrivateError, ChatWriteForbiddenError):
+        # chiqib ketilgan / yopiq chat
+        return
+
     except Exception as e:
         logger.exception("Telethon handler xatolik: %s", e)
-        if bot_app is not None:
-            try:
-                await bot_app.bot.send_message(
-                    chat_id=ADMIN_ID,
-                    text=f"⚠️ Telethon handler xatolik:\n<code>{html.escape(str(e))}</code>",
-                    parse_mode="HTML",
-                    disable_web_page_preview=True,
-                )
-            except Exception:
-                pass
